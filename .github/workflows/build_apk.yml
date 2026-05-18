@@ -3,30 +3,42 @@ on:
   push:
     tags:
       - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Fix Node.js 20 deprecation warning
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
+
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2.11.0
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.9'
           channel: 'stable'
           cache: true
+
       - name: Install dependencies
         run: flutter pub get
+
       - name: Generate Drift code
-        run: dart run build_runner build
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Build APK
-        run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        run: flutter build apk --release
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
       - name: Copy APK to root
         run: cp build/app/outputs/flutter-apk/app-release.apk hend_kasir.apk
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
