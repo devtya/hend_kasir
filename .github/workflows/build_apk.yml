@@ -1,35 +1,32 @@
 name: Build & Release APK
-
 on:
   push:
     tags:
       - 'v*'
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v4
         with:
           flutter-version: 'stable'
           channel: 'stable'
-
+          cache: true
       - name: Install dependencies
         run: flutter pub get
-
       - name: Generate Drift code
         run: dart run build_runner build
-
       - name: Build APK
         run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-
       - name: Copy APK to root
         run: cp build/app/outputs/flutter-apk/app-release.apk hend_kasir.apk
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
