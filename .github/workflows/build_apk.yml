@@ -22,18 +22,19 @@ jobs:
         run: flutter pub get
 
       - name: Generate Drift code
-        run: dart run build_runner build --delete-conflicting-outputs
+        run: dart run build_runner build
 
       - name: Build APK
-        run: flutter build apk --release
+        run: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Rename APK
-        run: |
-          mv build/app/outputs/flutter-apk/app-release.apk \
-             build/app/outputs/flutter-apk/hend_kasir-${{ github.ref_name }}.apk
+      - name: Copy APK to root
+        run: cp build/app/outputs/flutter-apk/app-release.apk hend_kasir.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/hend_kasir-${{ github.ref_name }}.apk
+          files: hend_kasir.apk
           generate_release_notes: true
