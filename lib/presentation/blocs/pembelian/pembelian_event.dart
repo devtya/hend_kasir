@@ -1,0 +1,44 @@
+import 'package:equatable/equatable.dart';
+
+abstract class PembelianEvent extends Equatable {
+  const PembelianEvent();
+  @override
+  List<Object?> get props => [];
+}
+
+class LoadPembelian extends PembelianEvent {}
+
+class AddPembelianEvent extends PembelianEvent {
+  final String namaSupplier;
+  final int? supplierId;
+  final List<ItemPembelianData> items;
+
+  const AddPembelianEvent({
+    required this.namaSupplier,
+    this.supplierId,
+    required this.items,
+  });
+
+  @override
+  List<Object?> get props => [namaSupplier, supplierId, items];
+}
+
+class ItemPembelianData {
+  final int produkId;
+  final String namaProduk;
+  final int jumlah;
+  final double hargaBeliSatuan;
+  // null = satuan dasar, non-null = SatuanProduk.id
+  final int? satuanId;
+  // 1.0 = satuan dasar, >1.0 = satuan konversi (misal 1 karton = 10 pcs → konversi=10)
+  final double konversi;
+
+  const ItemPembelianData({
+    required this.produkId,
+    required this.namaProduk,
+    required this.jumlah,
+    required this.hargaBeliSatuan,
+    this.satuanId,
+    this.konversi = 1.0,
+  });
+}
