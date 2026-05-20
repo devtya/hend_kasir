@@ -23,11 +23,27 @@ class AddPembelianEvent extends PembelianEvent {
   List<Object?> get props => [namaSupplier, supplierId, items];
 }
 
+class UpdatePembelianEvent extends PembelianEvent {
+  final int pembelianId;
+  final String namaSupplier;
+  final List<ItemPembelianData> items;
+
+  const UpdatePembelianEvent({
+    required this.pembelianId,
+    required this.namaSupplier,
+    required this.items,
+  });
+
+  @override
+  List<Object?> get props => [pembelianId, namaSupplier, items];
+}
+
 class ItemPembelianData {
   final int produkId;
   final String namaProduk;
   final int jumlah;
   final double hargaBeliSatuan;
+  final double subtotal;
   // null = satuan dasar, non-null = SatuanProduk.id
   final int? satuanId;
   // 1.0 = satuan dasar, >1.0 = satuan konversi (misal 1 karton = 10 pcs → konversi=10)
@@ -38,6 +54,7 @@ class ItemPembelianData {
     required this.namaProduk,
     required this.jumlah,
     required this.hargaBeliSatuan,
+    required this.subtotal,
     this.satuanId,
     this.konversi = 1.0,
   });

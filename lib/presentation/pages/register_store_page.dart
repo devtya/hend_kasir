@@ -17,7 +17,8 @@ class RegisterStorePage extends StatefulWidget {
 class _RegisterStorePageState extends State<RegisterStorePage> {
   final _tokoController = TextEditingController();
   final _alamatController = TextEditingController();
-  final _usernameController = TextEditingController();
+  final _namaController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
@@ -27,7 +28,8 @@ class _RegisterStorePageState extends State<RegisterStorePage> {
   void dispose() {
     _tokoController.dispose();
     _alamatController.dispose();
-    _usernameController.dispose();
+    _namaController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -36,13 +38,20 @@ class _RegisterStorePageState extends State<RegisterStorePage> {
   void _register() {
     final namaToko = _tokoController.text.trim();
     final alamat = _alamatController.text.trim();
-    final username = _usernameController.text.trim();
+    final nama = _namaController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
 
-    if (namaToko.isEmpty || username.isEmpty || password.isEmpty) {
+    if (namaToko.isEmpty || email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Isi semua field wajib')),
+      );
+      return;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Format email tidak valid')),
       );
       return;
     }
@@ -57,8 +66,9 @@ class _RegisterStorePageState extends State<RegisterStorePage> {
       RegisterStoreEvent(
         namaToko: namaToko,
         alamat: alamat.isEmpty ? null : alamat,
-        username: username,
+        email: email,
         password: password,
+        nama: nama.isEmpty ? null : nama,
       ),
     );
   }
@@ -127,10 +137,18 @@ class _RegisterStorePageState extends State<RegisterStorePage> {
               ),
               const SizedBox(height: 16),
               TextField(
-                controller: _usernameController,
+                controller: _namaController,
                 decoration: const InputDecoration(
-                  labelText: 'Username Admin *',
-                  prefixIcon: Icon(Icons.person),
+                  labelText: 'Nama (opsional)',
+                  prefixIcon: Icon(Icons.badge),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email Admin *',
+                  prefixIcon: Icon(Icons.email),
                 ),
               ),
               const SizedBox(height: 16),

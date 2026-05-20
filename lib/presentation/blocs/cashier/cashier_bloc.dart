@@ -26,6 +26,7 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     on<LoadCartFromPending>(_onLoadPending);
     on<BayarCashier>(_onBayar);
     on<BayarHutangCashier>(_onBayarHutang);
+    on<ClearError>(_onClearError);
   }
 
   Future<void> _onInit(InitCashier event, Emitter<CashierState> emit) async {
@@ -38,9 +39,13 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
   ) async {
     final produk = await getProdukByBarcode(event.barcode);
     if (produk == null) {
-      emit(
-        CashierError('Produk dengan barcode ${event.barcode} tidak ditemukan'),
-      );
+      final cart = state is CashierReady ? (state as CashierReady).cart : <CartItem>[];
+      final jumlahBayar = state is CashierReady ? (state as CashierReady).jumlahBayar : 0.0;
+      emit(CashierError(
+        'Produk dengan barcode ${event.barcode} tidak ditemukan',
+        cart: cart,
+        jumlahBayar: jumlahBayar,
+      ));
       return;
     }
     if (state is CashierReady) {
@@ -151,7 +156,11 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     final current = state as CashierReady;
     if (current.cart.isEmpty) return;
     if (current.jumlahBayar < current.totalSetelahDiskon) {
-      emit(CashierError('Jumlah bayar kurang dari total'));
+      emit(CashierError(
+        'Jumlah bayar kurang dari total',
+        cart: current.cart,
+        jumlahBayar: current.jumlahBayar,
+      ));
       return;
     }
     try {
@@ -162,7 +171,11 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       );
       emit(CashierSuccess(id));
     } catch (e) {
-      emit(CashierError(e.toString()));
+      emit(CashierError(
+        e.toString(),
+        cart: current.cart,
+        jumlahBayar: current.jumlahBayar,
+      ));
     }
   }
 
@@ -174,7 +187,11 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     final current = state as CashierReady;
     if (current.cart.isEmpty) return;
     if (event.namaPelanggan.trim().isEmpty) {
-      emit(CashierError('Nama pelanggan wajib diisi'));
+      emit(CashierError(
+        'Nama pelanggan wajib diisi',
+        cart: current.cart,
+        jumlahBayar: current.jumlahBayar,
+      ));
       return;
     }
     try {
@@ -186,7 +203,18 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       );
       emit(CashierSuccess(id, isHutang: true));
     } catch (e) {
-      emit(CashierError(e.toString()));
+      emit(CashierError(
+        e.toString(),
+        cart: current.cart,
+        jumlahBayar: current.jumlahBayar,
+      ));
+    }
+  }
+
+  void _onClearError(ClearError event, Emitter<CashierState> emit) {
+    if (state is CashierError) {
+      final error = state as CashierError;
+      emit(CashierReady(cart: error.cart, jumlahBayar: error.jumlahBayar));
     }
   }
 }

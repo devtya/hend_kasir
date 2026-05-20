@@ -57,8 +57,23 @@ class HutangPiutangRepositoryImpl implements HutangPiutangRepository {
 
   @override
   Future<void> updateStatus(int id, String status) async {
+    final existing = await (_db.select(
+      _db.hutangPiutangTable,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+
     await (_db.update(_db.hutangPiutangTable)..where((t) => t.id.equals(id)))
         .write(HutangPiutangTableCompanion(status: Value(status)));
     await _syncHelper.onUpdate(tableEntity: 'hutang_piutang', localId: id);
+
+    if (existing?.transaksiId != null && status == 'lunas') {
+      final transaksiId = existing!.transaksiId!;
+      await (_db.update(_db.transaksiTable)
+            ..where((t) => t.id.equals(transaksiId)))
+          .write(TransaksiTableCompanion(status: Value('lunas')));
+      await _syncHelper.onUpdate(
+        tableEntity: 'transaksi',
+        localId: transaksiId,
+      );
+    }
   }
 }

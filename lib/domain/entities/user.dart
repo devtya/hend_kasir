@@ -5,6 +5,9 @@ class User extends Equatable {
   final String username;
   final String password;
   final String role;
+  final String? nama;
+  final String? email;
+  final int? tokoId;
   final DateTime? createdAt;
 
   const User({
@@ -12,6 +15,9 @@ class User extends Equatable {
     required this.username,
     required this.password,
     required this.role,
+    this.nama,
+    this.email,
+    this.tokoId,
     this.createdAt,
   });
 
@@ -20,6 +26,9 @@ class User extends Equatable {
     String? username,
     String? password,
     String? role,
+    String? nama,
+    String? email,
+    int? tokoId,
     DateTime? createdAt,
   }) {
     return User(
@@ -27,10 +36,14 @@ class User extends Equatable {
       username: username ?? this.username,
       password: password ?? this.password,
       role: role ?? this.role,
+      nama: nama ?? this.nama,
+      email: email ?? this.email,
+      tokoId: tokoId ?? this.tokoId,
       createdAt: createdAt ?? this.createdAt,
     );
   }
 
   @override
-  List<Object?> get props => [id, username, password, role, createdAt];
+  List<Object?> get props =>
+      [id, username, password, role, nama, email, tokoId, createdAt];
 }

@@ -8,4 +8,8 @@ abstract class PembelianRepository {
   Future<void> addItemPembelian(ItemPembelian item);
   Future<List<ItemPembelian>> getItemsByPembelianId(int pembelianId);
   Future<Pembelian?> getLastPembelianByProdukId(int produkId);
+
+  Future<void> updatePembelian(Pembelian pembelian);
+  Future<void> deleteItemsByPembelianId(int pembelianId);
+  Future<void> deletePembelian(int id);
 }

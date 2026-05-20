@@ -36,7 +36,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _onLogin(LoginEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
-      final user = await authRepository.login(event.username, event.password);
+      final user =
+          await authRepository.login(event.usernameOrEmail, event.password);
       if (user != null) {
         emit(Authenticated(user));
       } else {
@@ -67,8 +68,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await authRepository.registerStore(
         namaToko: event.namaToko,
         alamat: event.alamat,
-        username: event.username,
+        email: event.email,
         password: event.password,
+        nama: event.nama,
       );
       emit(StoreRegistered(user));
     } catch (e) {

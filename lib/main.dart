@@ -56,7 +56,7 @@ class HendKasirApp extends StatelessWidget {
               BlocProvider(create: (context) => sl<SyncBloc>()),
             ],
             child: MaterialApp(
-              title: 'Hend Kasir',
+              title: 'HendKasir',
               debugShowCheckedModeBanner: false,
               themeMode: themeMode,
               theme: AppTheme.lightTheme,

@@ -1,7 +1,7 @@
 name: hend_kasir
 description: "Aplikasi Kasir Toko Sembako"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.11.5
@@ -34,6 +34,9 @@ dependencies:
   mobile_scanner: ^6.0.7
   shared_preferences: ^2.5.5
 
+  # Printing (Thermal Printer)
+  flutter_blue_plus: ^1.35.3
+
   # Backup & Restore (Legacy Excel — will be replaced by Supabase sync)
   excel: ^4.0.0
   file_picker: ^8.1.0
@@ -44,6 +47,7 @@ dependencies:
   supabase_flutter: ^2.8.4
   uuid: ^4.5.1
   connectivity_plus: ^6.1.4
+  device_info_plus: ^11.0.0
 
 dev_dependencies:
   flutter_test:

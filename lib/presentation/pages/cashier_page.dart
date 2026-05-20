@@ -9,6 +9,9 @@ import '../../domain/entities/pending_order.dart';
 import '../../domain/repositories/pending_order_repository.dart';
 import '../../domain/usecases/produk/get_produk_by_barcode.dart';
 import '../../domain/usecases/transaksi/buat_transaksi.dart';
+import '../../data/services/printer_service.dart';
+import '../../data/services/printer_settings.dart';
+import '../../data/services/receipt_generator.dart';
 import '../blocs/cashier/cashier_bloc.dart';
 import '../blocs/cashier/cashier_event.dart';
 import '../blocs/cashier/cashier_state.dart';
@@ -31,10 +34,210 @@ class _CashierPageState extends State<CashierPage> {
   );
   final _bayarController = TextEditingController();
 
+  // Store last transaction data for printing
+  List<CartItem>? _lastCartItems;
+  double _lastTotalBayar = 0;
+  double _lastKembalian = 0;
+  bool _isPrinting = false;
+
   @override
   void initState() {
     super.initState();
     context.read<CashierBloc>().add(InitCashier());
+  }
+
+  Future<void> _showBayarConfirmation(CashierReady data) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Konfirmasi Pembayaran'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _infoRow('Total', _currency.format(data.totalSetelahDiskon)),
+            const Divider(height: 16),
+            _infoRow('Dibayar', _currency.format(data.jumlahBayar)),
+            _infoRow('Kembali', _currency.format(data.kembalian)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Bayar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      _lastCartItems = List.from(data.cart);
+      _lastTotalBayar = data.jumlahBayar;
+      _lastKembalian = data.kembalian;
+      if (context.mounted) {
+        context.read<CashierBloc>().add(BayarCashier());
+      }
+    }
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 16)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _printReceipt({
+    required int transaksiId,
+    required List<CartItem> cartItems,
+    required double totalBayar,
+    required double kembalian,
+    String metode = 'Tunai',
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final settings = sl<PrinterSettings>();
+    if (!settings.enabled) {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Printer tidak aktif. Aktifkan di Pengaturan Printer.'),
+            backgroundColor: AppTheme.warningRed,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isPrinting = true);
+
+    try {
+      final generator = sl<ReceiptGenerator>();
+      final receipt = generator.fromTransaction(
+        transaksiId: transaksiId,
+        cartItems: cartItems,
+        totalBayar: totalBayar,
+        kembalian: kembalian,
+        metodePembayaran: metode,
+      );
+
+      final printer = sl<PrinterService>();
+      final success = await printer.printReceipt(receipt);
+
+      if (mounted) {
+        if (success) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Nota berhasil dicetak'),
+              backgroundColor: AppTheme.primaryGreen,
+            ),
+          );
+        } else {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Gagal mencetak nota'),
+              backgroundColor: AppTheme.warningRed,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Error print: $e'),
+            backgroundColor: AppTheme.warningRed,
+          ),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isPrinting = false);
+    }
+  }
+
+  Widget _buildReceiptPreview({
+    required int transaksiId,
+    required List<CartItem> cartItems,
+    required double totalBayar,
+    required double kembalian,
+  }) {
+    final settings = sl<PrinterSettings>();
+    final tanggal = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+    final lebar = 40;
+
+    String line() => '─' * lebar;
+    String center(String s) {
+      final pad = (lebar - s.length) ~/ 2;
+      return '${' ' * pad}$s';
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln(center(settings.namaToko));
+    if (settings.alamatToko.isNotEmpty) {
+      buffer.writeln(center(settings.alamatToko));
+    }
+    buffer.writeln(line());
+    buffer.writeln('#$transaksiId');
+    buffer.writeln('Tgl: $tanggal');
+    buffer.writeln(line());
+
+    for (final item in cartItems) {
+      final nama = item.namaProduk.length > lebar - 4
+          ? '${item.namaProduk.substring(0, lebar - 4)}..'
+          : item.namaProduk;
+      final hargaStr = _currency.format(item.hargaJual);
+      final subtotalStr = _currency.format(item.subtotal);
+      buffer.writeln(nama);
+      buffer.writeln('  ${item.jumlah}x $hargaStr  $subtotalStr');
+      if (item.totalDiskon > 0) {
+        buffer.writeln('  Diskon: -${_currency.format(item.totalDiskon)}');
+      }
+    }
+
+    buffer.writeln(line());
+    buffer.writeln('Subtotal  ${_currency.format(totalBayar + kembalian)}');
+    buffer.writeln('TOTAL     ${_currency.format(totalBayar)}');
+    buffer.writeln('Dibayar   ${_currency.format(totalBayar)}');
+    if (kembalian > 0) {
+      buffer.writeln('Kembali   ${_currency.format(kembalian)}');
+    }
+    buffer.writeln(line());
+    buffer.writeln(center('Terima kasih!'));
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 400),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: SingleChildScrollView(
+        child: Text(
+          buffer.toString(),
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 10,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -236,6 +439,13 @@ class _CashierPageState extends State<CashierPage> {
 
   void _showHutangDialog() {
     final namaController = TextEditingController();
+    // Capture current cart data
+    final state = context.read<CashierBloc>().state;
+    if (state is CashierReady) {
+      _lastCartItems = List.from(state.cart);
+      _lastTotalBayar = state.totalSetelahDiskon;
+      _lastKembalian = 0;
+    }
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -373,19 +583,54 @@ class _CashierPageState extends State<CashierPage> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<CashierBloc, CashierState>(
-      listener: (context, state) {
+      listener: (context, state) async {
         if (state is CashierSuccess) {
           _bayarController.clear();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                state.isHutang
-                    ? 'Transaksi #${state.transaksiId} dicatat sebagai hutang'
-                    : 'Transaksi #${state.transaksiId} berhasil!',
-              ),
+
+          final shouldPrint = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Transaksi Berhasil'),
+              content: state.isHutang
+                  ? Text('Transaksi #${state.transaksiId} dicatat sebagai hutang')
+                  : SizedBox(
+                      width: double.maxFinite,
+                      child: _buildReceiptPreview(
+                        transaksiId: state.transaksiId,
+                        cartItems: _lastCartItems ?? [],
+                        totalBayar: _lastTotalBayar,
+                        kembalian: _lastKembalian,
+                      ),
+                    ),
+              actions: [
+                if (!state.isHutang)
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Cetak Nota'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(state.isHutang ? 'Tutup' : 'Tidak'),
+                ),
+              ],
             ),
           );
-          context.read<CashierBloc>().add(InitCashier());
+
+          if (shouldPrint == true &&
+              _lastCartItems != null &&
+              context.mounted) {
+            _printReceipt(
+              transaksiId: state.transaksiId,
+              cartItems: _lastCartItems!,
+              totalBayar: _lastTotalBayar,
+              kembalian: _lastKembalian,
+            );
+          }
+
+          _lastCartItems = null;
+          if (context.mounted) {
+            context.read<CashierBloc>().add(InitCashier());
+          }
         }
         if (state is CashierError) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -430,11 +675,11 @@ class _CashierPageState extends State<CashierPage> {
               if (state is CashierLoading) {
                 return const Center(child: CircularProgressIndicator());
               }
-              if (state is! CashierReady) {
+              if (state is! CashierReady && state is! CashierError) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final data = state;
+              final data = _resolveCashierData(state);
 
               return Column(
                 children: [
@@ -470,6 +715,14 @@ class _CashierPageState extends State<CashierPage> {
         ),
       ),
     );
+  }
+
+  CashierReady _resolveCashierData(CashierState state) {
+    if (state is CashierReady) return state;
+    if (state is CashierError) {
+      return CashierReady(cart: state.cart, jumlahBayar: state.jumlahBayar);
+    }
+    return const CashierReady();
   }
 
   Widget _buildCartList(CashierReady data) {
@@ -740,9 +993,40 @@ class _CashierPageState extends State<CashierPage> {
                 child: ElevatedButton.icon(
                   onPressed: data.cart.isEmpty
                       ? null
-                      : () => context.read<CashierBloc>().add(BayarCashier()),
-                  icon: const Icon(Icons.payments),
-                  label: const Text('Bayar'),
+                      : () {
+                          if (data.jumlahBayar <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Masukkan nominal bayar terlebih dahulu',
+                                ),
+                                backgroundColor: AppTheme.warningRed,
+                              ),
+                            );
+                            return;
+                          }
+                          if (data.jumlahBayar < data.totalSetelahDiskon) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Jumlah bayar kurang dari total'),
+                                backgroundColor: AppTheme.warningRed,
+                              ),
+                            );
+                            return;
+                          }
+                          _showBayarConfirmation(data);
+                        },
+                  icon: _isPrinting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.payments),
+                  label: Text(_isPrinting ? 'Printing...' : 'Bayar'),
                 ),
               ),
               const SizedBox(width: 8),

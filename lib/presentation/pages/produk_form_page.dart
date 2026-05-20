@@ -77,17 +77,15 @@ class _ProdukFormPageState extends State<ProdukFormPage> {
 
     // Auto-sync Base Unit name with Satuan Dasar input when adding new product
     _satuanDasarCtrl.addListener(() {
-      if (!_isEditing) {
-        final idx = _units.indexWhere((u) => u.isBase);
-        if (idx != -1) {
-          final newName = _satuanDasarCtrl.text.trim().isEmpty
-              ? 'pcs'
-              : _satuanDasarCtrl.text.trim();
-          if (_units[idx].nama != newName) {
-            setState(() {
-              _units[idx] = _units[idx].copyWith(nama: newName);
-            });
-          }
+      final idx = _units.indexWhere((u) => u.isBase);
+      if (idx != -1) {
+        final newName = _satuanDasarCtrl.text.trim().isEmpty
+            ? 'pcs'
+            : _satuanDasarCtrl.text.trim();
+        if (_units[idx].nama != newName) {
+          setState(() {
+            _units[idx] = _units[idx].copyWith(nama: newName);
+          });
         }
       }
     });

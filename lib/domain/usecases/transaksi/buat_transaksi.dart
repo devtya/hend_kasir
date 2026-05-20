@@ -26,7 +26,7 @@ class CartItem {
     this.diskonValue = 0,
   });
 
-  double get subtotal => hargaJual * jumlah;
+  double get subtotal => (hargaJual * jumlah).roundToDouble();
   double get totalDiskon => diskonTipe == 1
       ? subtotal * diskonValue / 100
       : diskonTipe == 2

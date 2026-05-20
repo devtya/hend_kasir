@@ -48,6 +48,7 @@ import '../../domain/usecases/produk/get_last_harga_change.dart';
 import '../../domain/usecases/produk/get_last_pembelian.dart';
 import '../../domain/usecases/produk/get_last_penjualan.dart';
 import '../../domain/usecases/stok/buat_pembelian.dart';
+import '../../domain/usecases/stok/update_pembelian.dart';
 import '../../domain/usecases/stok/get_riwayat_stok.dart';
 import '../../domain/usecases/stok/tambah_stok.dart';
 import '../../domain/usecases/supplier/add_supplier.dart';
@@ -75,8 +76,37 @@ import '../../presentation/blocs/supplier/supplier_bloc.dart';
 import '../../presentation/blocs/transaksi/transaksi_bloc.dart';
 import '../../presentation/blocs/notifikasi/notifikasi_bloc.dart';
 import '../../presentation/blocs/sync/sync_bloc.dart';
+import '../../data/services/printer_service.dart';
+import '../../data/services/printer_settings.dart';
+import '../../data/services/network_printer_service.dart';
+import '../../data/services/bluetooth_printer_service.dart';
+import '../../data/services/receipt_generator.dart';
 
 final sl = GetIt.instance;
+
+void _initPrinterService() {
+  final settings = sl<PrinterSettings>();
+  if (settings.type == 'bluetooth') {
+    sl.registerLazySingleton<PrinterService>(() => sl<BluetoothPrinterService>());
+  } else {
+    sl.registerLazySingleton<PrinterService>(
+      () => NetworkPrinterService(baseUrl: settings.url),
+    );
+  }
+}
+
+void updatePrinterService() {
+  final settings = sl<PrinterSettings>();
+  sl.allowReassignment = true;
+  if (settings.type == 'bluetooth') {
+    sl.registerLazySingleton<PrinterService>(() => sl<BluetoothPrinterService>());
+  } else {
+    sl.registerLazySingleton<PrinterService>(
+      () => NetworkPrinterService(baseUrl: settings.url),
+    );
+  }
+  sl.allowReassignment = false;
+}
 
 Future<void> initDependencies() async {
   final prefs = await SharedPreferences.getInstance();
@@ -95,6 +125,21 @@ Future<void> initDependencies() async {
 
   sl.registerLazySingleton<TokoService>(() => TokoService(prefs));
   sl.registerLazySingleton<UpdateService>(() => UpdateService());
+
+  // Printer services
+  sl.registerLazySingleton<PrinterSettings>(() => PrinterSettings(prefs));
+  sl.registerLazySingleton<BluetoothPrinterService>(
+    () => BluetoothPrinterService(),
+  );
+  _initPrinterService();
+  sl.registerFactory<ReceiptGenerator>(
+    () => ReceiptGenerator(
+      namaToko: sl<PrinterSettings>().namaToko,
+      alamatToko: sl<PrinterSettings>().alamatToko,
+      lebarKertas: sl<PrinterSettings>().lebarKertas,
+      fontSize: sl<PrinterSettings>().fontSize,
+    ),
+  );
 
   sl.registerLazySingleton<AuthRepository>(
     () => AuthRepositoryImpl(sl(), sl(), sl(), Supabase.instance.client, sl()),
@@ -184,6 +229,13 @@ Future<void> initDependencies() async {
       riwayatStokRepository: sl(),
     ),
   );
+  sl.registerLazySingleton(
+    () => UpdatePembelian(
+      pembelianRepository: sl(),
+      produkRepository: sl(),
+      riwayatStokRepository: sl(),
+    ),
+  );
 
   sl.registerFactory(
     () => ProdukBloc(
@@ -210,7 +262,11 @@ Future<void> initDependencies() async {
   sl.registerFactory(() => HutangBloc(repository: sl()));
   sl.registerFactory(() => LaporanBloc(transaksiRepository: sl()));
   sl.registerFactory(
-    () => PembelianBloc(repository: sl(), buatPembelian: sl()),
+    () => PembelianBloc(
+      repository: sl(),
+      buatPembelian: sl(),
+      updatePembelian: sl(),
+    ),
   );
   sl.registerFactory(
     () => SupplierBloc(

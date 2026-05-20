@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +114,47 @@ class AppDatabase extends _$AppDatabase {
         await customStatement('UPDATE user_table SET toko_id = 1');
         await m.addColumn(syncRecordTable, syncRecordTable.tokoId);
         await customStatement('UPDATE sync_record_table SET toko_id = 1');
+      }
+      if (from < 10) {
+        await m.addColumn(pendingPembelianTable, pendingPembelianTable.isPpnEnabled);
+        await m.addColumn(pendingPembelianTable, pendingPembelianTable.ppnPercent);
+      }
+      if (from < 11) {
+        try {
+          await m.addColumn(userTable, userTable.nama);
+        } catch (_) {}
+        try {
+          await m.addColumn(userTable, userTable.email);
+        } catch (_) {}
+      }
+      if (from < 12) {
+        // placeholder for future migration
+      }
+      if (from < 13) {
+        await customStatement('PRAGMA foreign_keys = OFF');
+        await customStatement('''
+          CREATE TABLE user_table_new (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            nama TEXT,
+            email TEXT,
+            toko_id INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(email)
+          )
+        ''');
+        await customStatement('''
+          INSERT INTO user_table_new
+          SELECT id, username, password, role, nama, email, toko_id, created_at
+          FROM user_table
+        ''');
+        await customStatement('DROP TABLE user_table');
+        await customStatement(
+          'ALTER TABLE user_table_new RENAME TO user_table',
+        );
+        await customStatement('PRAGMA foreign_keys = ON');
       }
     },
   );

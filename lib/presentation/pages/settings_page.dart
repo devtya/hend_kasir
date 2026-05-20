@@ -1,12 +1,98 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/services/toko_service.dart';
+import '../../core/services/update_service.dart';
+import '../../core/theme/app_theme.dart';
+import '../blocs/auth/auth_bloc.dart';
+import '../blocs/auth/auth_event.dart';
 import '../blocs/theme/theme_cubit.dart';
+import 'printer_settings_page.dart';
+import 'user_management_page.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  final _updateService = sl<UpdateService>();
+  String _appVersion = '';
+  bool _checkingUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _appVersion = info.version);
+    } catch (_) {}
+  }
+
+  Future<void> _checkUpdate() async {
+    setState(() => _checkingUpdate = true);
+    try {
+      final update = await _updateService.checkForUpdate();
+      if (!mounted) return;
+      setState(() => _checkingUpdate = false);
+
+      if (update == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aplikasi sudah versi terbaru')),
+        );
+        return;
+      }
+
+      final install = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Update Tersedia'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Versi baru: ${update.version}'),
+              if (update.notes != null && update.notes!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text('Catatan rilis:', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(update.notes!, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Nanti')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Update')),
+          ],
+        ),
+      );
+
+      if (install == true) {
+        final path = await _updateService.downloadApk(update.url);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Download selesai, membuka installer...')),
+          );
+        }
+        await _updateService.installApk(path);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checkingUpdate = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memeriksa update: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +103,7 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // --- Toko Info ---
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -48,6 +135,8 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+
+          // --- Theme ---
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -56,10 +145,7 @@ class SettingsPage extends StatelessWidget {
                 children: [
                   const Text(
                     'Tema Aplikasi',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   BlocBuilder<ThemeCubit, ThemeMode>(
@@ -69,10 +155,7 @@ class SettingsPage extends StatelessWidget {
                         children: [
                           Text(
                             _themeLabel(themeMode),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey,
-                            ),
+                            style: const TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                           const SizedBox(height: 16),
                           SegmentedButton<ThemeMode>(
@@ -99,6 +182,111 @@ class SettingsPage extends StatelessWidget {
                             },
                           ),
                         ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // --- Printer & User Management ---
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.print, color: AppTheme.primaryGreen),
+                    title: const Text('Pengaturan Printer'),
+                    subtitle: const Text('Printer thermal USB/Bluetooth'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PrinterSettingsPage()),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.people, color: AppTheme.primaryGreen),
+                    title: const Text('Manajemen Pengguna'),
+                    subtitle: const Text('Kelola admin dan kasir'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UserManagementPage()),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // --- Info Aplikasi & Logout ---
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.grey, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          _appVersion.isNotEmpty ? 'Versi $_appVersion' : 'Memuat versi...',
+                          style: const TextStyle(fontSize: 14, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: Icon(
+                      Icons.system_update,
+                      color: _checkingUpdate ? Colors.grey : AppTheme.primaryGreen,
+                    ),
+                    title: Text(_checkingUpdate ? 'Memeriksa...' : 'Periksa Pembaruan'),
+                    trailing: _checkingUpdate
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: _checkingUpdate ? null : _checkUpdate,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: AppTheme.warningRed),
+                    title: const Text('Logout',
+                        style: TextStyle(color: AppTheme.warningRed)),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Logout'),
+                          content: const Text('Apakah Anda yakin ingin keluar?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Batal'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                context.read<AuthBloc>().add(LogoutEvent());
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppTheme.warningRed,
+                              ),
+                              child: const Text('Logout'),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),

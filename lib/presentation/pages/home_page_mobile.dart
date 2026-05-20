@@ -3,6 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/theme/app_theme.dart';
+import 'login_page.dart';
+import '../../domain/entities/user.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_event.dart';
 import '../blocs/auth/auth_state.dart';
@@ -25,7 +28,6 @@ import 'produk_page.dart';
 import 'settings_page.dart';
 import 'supplier_page.dart';
 import 'transaksi_page.dart';
-import 'user_management_page.dart';
 
 class HomeMobilePage extends StatelessWidget {
   const HomeMobilePage({super.key});
@@ -47,6 +49,8 @@ class _HomeMobileView extends StatefulWidget {
 }
 
 class _HomeMobileViewState extends State<_HomeMobileView> {
+  bool _emailPromptShown = false;
+
   void _reloadNotifikasi() {
     if (mounted) {
       context.read<NotifikasiBloc>().add(LoadNotifikasi());
@@ -60,17 +64,107 @@ class _HomeMobileViewState extends State<_HomeMobileView> {
     ).then((_) => _reloadNotifikasi());
   }
 
+  void _showEmailDialog(BuildContext context, User user) {
+    final emailCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lengkapi Email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Anda login menggunakan username. Silakan isi email '
+              'untuk keamanan akun dan fitur lupa password.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Nanti'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Email tidak boleh kosong')),
+                );
+                return;
+              }
+              if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Format email tidak valid')),
+                );
+                return;
+              }
+              try {
+                await sl<AuthRepository>().updateUser(
+                  user.copyWith(email: email),
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  context.read<AuthBloc>().add(CheckAuthStatus());
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text('Gagal menyimpan: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
-      builder: (context, authState) {
+    return BlocListener<AuthBloc, AuthState>(
+      listenWhen: (prev, current) => current is Unauthenticated,
+      listener: (context, state) {
+        _emailPromptShown = false;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+        );
+      },
+      child: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, authState) {
         String username = '';
         String role = 'kasir';
         if (authState is Authenticated) {
-          username = authState.user.username;
+          username = authState.user.nama ?? authState.user.username;
           role = authState.user.role;
         }
         final isAdmin = role == 'admin';
+
+        // Prompt email jika login via username (email null)
+        if (authState is Authenticated &&
+            authState.user.email == null &&
+            !_emailPromptShown) {
+          _emailPromptShown = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showEmailDialog(context, authState.user);
+          });
+        }
 
         return Scaffold(
           appBar: AppBar(
@@ -132,45 +226,6 @@ class _HomeMobileViewState extends State<_HomeMobileView> {
                           ),
                         ),
                     ],
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.logout),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Logout'),
-                      content: const Text('Apakah Anda yakin ingin keluar?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Batal'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            context.read<AuthBloc>().add(LogoutEvent());
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.warningRed,
-                          ),
-                          child: const Text('Logout'),
-                        ),
-                      ],
-                    ),
                   );
                 },
               ),
@@ -342,15 +397,14 @@ class _HomeMobileViewState extends State<_HomeMobileView> {
                           );
                         },
                       ),
-                    if (isAdmin)
-                      _MenuGridCard(
-                        icon: Icons.manage_accounts,
-                        label: 'Manajemen Pengguna',
-                        color: Colors.indigo,
-                        onTap: () {
-                          _navigateAndReload(const UserManagementPage());
-                        },
-                      ),
+                    _MenuGridCard(
+                      icon: Icons.settings,
+                      label: 'Pengaturan',
+                      color: Colors.indigo,
+                      onTap: () {
+                        _navigateAndReload(const SettingsPage());
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -358,6 +412,7 @@ class _HomeMobileViewState extends State<_HomeMobileView> {
           ),
         );
       },
+    ),
     );
   }
 }

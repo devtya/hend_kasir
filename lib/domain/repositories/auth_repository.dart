@@ -1,8 +1,8 @@
 import '../entities/user.dart';
 
 abstract class AuthRepository {
-  /// Melakukan proses login dan menyimpan sesi jika berhasil
-  Future<User?> login(String username, String password);
+  /// Login with username or email
+  Future<User?> login(String usernameOrEmail, String password);
 
   /// Keluar dan menghapus sesi
   Future<void> logout();
@@ -26,7 +26,8 @@ abstract class AuthRepository {
   Future<User> registerStore({
     required String namaToko,
     String? alamat,
-    required String username,
+    required String email,
     required String password,
+    String? nama,
   });
 }

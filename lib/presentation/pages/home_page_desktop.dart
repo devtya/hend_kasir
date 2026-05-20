@@ -3,7 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/di/injection.dart';
+import 'login_page.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/entities/user.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_event.dart';
 import '../blocs/auth/auth_state.dart';
@@ -26,7 +29,6 @@ import 'produk_page.dart';
 import 'settings_page.dart';
 import 'supplier_page.dart';
 import 'transaksi_page.dart';
-import 'user_management_page.dart';
 
 class _NavItem {
   final IconData icon;
@@ -50,7 +52,7 @@ const List<_NavItem> _navItems = [
   _NavItem(icon: Icons.business_rounded,         label: 'Supplier',            section: 'Admin', adminOnly: true),
   _NavItem(icon: Icons.account_balance_wallet_rounded, label: 'Hutang Piutang', adminOnly: true),
   _NavItem(icon: Icons.bar_chart_rounded,        label: 'Laporan',             adminOnly: true),
-  _NavItem(icon: Icons.manage_accounts_rounded,  label: 'Manajemen Pengguna',  adminOnly: true),
+  _NavItem(icon: Icons.settings_rounded,          label: 'Pengaturan'),
 ];
 
 class HomeDesktopPage extends StatelessWidget {
@@ -74,6 +76,7 @@ class _HomeDesktopView extends StatefulWidget {
 
 class _HomeDesktopViewState extends State<_HomeDesktopView> {
   int _selectedIndex = 0;
+  bool _emailPromptShown = false;
 
   void _reloadNotifikasi() {
     if (mounted) context.read<NotifikasiBloc>().add(LoadNotifikasi());
@@ -130,60 +133,149 @@ class _HomeDesktopViewState extends State<_HomeDesktopView> {
           value: sl<LaporanBloc>(),
           child: const LaporanPage(),
         ));
-      case 'Manajemen Pengguna':
-        _navigateAndReload(const UserManagementPage());
+      case 'Pengaturan':
+        _navigateAndReload(const SettingsPage());
     }
+  }
+
+  void _showEmailDialog(BuildContext context, User user) {
+    final emailCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lengkapi Email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Anda login menggunakan username. Silakan isi email '
+              'untuk keamanan akun dan fitur lupa password.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Nanti'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Email tidak boleh kosong')),
+                );
+                return;
+              }
+              if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Format email tidak valid')),
+                );
+                return;
+              }
+              try {
+                await sl<AuthRepository>().updateUser(
+                  user.copyWith(email: email),
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  context.read<AuthBloc>().add(CheckAuthStatus());
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text('Gagal menyimpan: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
-      builder: (context, authState) {
-        String username = '';
-        String role = 'kasir';
-        if (authState is Authenticated) {
-          username = authState.user.username;
-          role = authState.user.role;
-        }
-        final isAdmin = role == 'admin';
+    return BlocListener<AuthBloc, AuthState>(
+      listenWhen: (prev, current) => current is Unauthenticated,
+      listener: (context, state) {
+        _emailPromptShown = false;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+        );
+      },
+      child: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, authState) {
+          String username = '';
+          String role = 'kasir';
+          if (authState is Authenticated) {
+            username = authState.user.nama ?? authState.user.username;
+            role = authState.user.role;
+          }
+          final isAdmin = role == 'admin';
 
-        return Scaffold(
-          backgroundColor: AppTheme.surface,
-          body: Row(
-            children: [
-              _Sidebar(
-                username: username,
-                role: role,
-                isAdmin: isAdmin,
-                selectedIndex: _selectedIndex,
-                onNavTap: (i) => _onNavTap(i, isAdmin, username),
-                onSettingsTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+          // Prompt email jika login via username (email null)
+          if (authState is Authenticated &&
+              authState.user.email == null &&
+              !_emailPromptShown) {
+            _emailPromptShown = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showEmailDialog(context, authState.user);
+            });
+          }
+
+          return Scaffold(
+            backgroundColor: AppTheme.surface,
+            body: Row(
+              children: [
+                _Sidebar(
+                  username: username,
+                  role: role,
+                  isAdmin: isAdmin,
+                  selectedIndex: _selectedIndex,
+                  onNavTap: (i) => _onNavTap(i, isAdmin, username),
+                  onSettingsTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsPage()),
+                  ),
                 ),
-                onLogoutTap: () => _showLogoutDialog(context),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    _TopBar(
-                      username: username,
-                      onNotifTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => BlocProvider.value(
-                              value: context.read<NotifikasiBloc>(),
-                              child: const NotifikasiPage(),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _TopBar(
+                        username: username,
+                        onNotifTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BlocProvider.value(
+                                value: context.read<NotifikasiBloc>(),
+                                child: const NotifikasiPage(),
+                              ),
                             ),
-                          ),
-                        ).then((_) => _reloadNotifikasi());
-                      },
-                      onSettingsTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                          ).then((_) => _reloadNotifikasi());
+                        },
+                        onSettingsTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SettingsPage()),
+                        ),
                       ),
-                    ),
                     Expanded(
                       child: _DashboardBody(
                         isAdmin: isAdmin,
@@ -204,30 +296,7 @@ class _HomeDesktopViewState extends State<_HomeDesktopView> {
           ),
         );
       },
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Apakah Anda yakin ingin keluar?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.read<AuthBloc>().add(LogoutEvent());
-            },
-            style: TextButton.styleFrom(foregroundColor: AppTheme.warningRed),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
+    ),
     );
   }
 }
@@ -239,7 +308,6 @@ class _Sidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onNavTap;
   final VoidCallback onSettingsTap;
-  final VoidCallback onLogoutTap;
 
   const _Sidebar({
     required this.username,
@@ -248,7 +316,6 @@ class _Sidebar extends StatelessWidget {
     required this.selectedIndex,
     required this.onNavTap,
     required this.onSettingsTap,
-    required this.onLogoutTap,
   });
 
   @override
@@ -353,7 +420,7 @@ class _Sidebar extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(10),
-                onTap: onLogoutTap,
+                onTap: onSettingsTap,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 10),

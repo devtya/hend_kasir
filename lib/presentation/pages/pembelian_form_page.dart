@@ -18,21 +18,29 @@ import '../../domain/repositories/produk_repository.dart';
 import '../utils/dialog_utils.dart';
 import '../blocs/pembelian/pembelian_bloc.dart';
 import '../blocs/pembelian/pembelian_event.dart';
+import '../blocs/pembelian/pembelian_state.dart';
 import '../blocs/produk/produk_bloc.dart';
 import '../blocs/supplier/supplier_bloc.dart';
 import 'produk_form_page.dart';
 import 'supplier_page.dart';
 import '../../domain/repositories/supplier_repository.dart';
+import '../../domain/repositories/pembelian_repository.dart';
 import '../../domain/repositories/pending_pembelian_repository.dart';
 import '../../domain/entities/pending_pembelian.dart';
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_state.dart';
 import '../widgets/cari_produk_dialog.dart';
 import '../widgets/supplier_konfirmasi_dialog.dart';
+import 'pending_pembelian_page.dart';
 
 class PembelianFormPage extends StatefulWidget {
   final int? pendingId;
-  const PembelianFormPage({super.key, this.pendingId});
+  final int? existingPembelianId;
+  const PembelianFormPage({
+    super.key,
+    this.pendingId,
+    this.existingPembelianId,
+  });
 
   @override
   State<PembelianFormPage> createState() => _PembelianFormPageState();
@@ -55,12 +63,18 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
   );
 
   bool _forcePop = false;
+  int? _pembelianId;
+  bool _isSaving = false;
+  List<_ItemPembelian>? _pendingSaveItems;
+  int? _pendingSaveSupplierId;
 
   @override
   void initState() {
     super.initState();
     if (widget.pendingId != null) {
       _loadPending(widget.pendingId!);
+    } else if (widget.existingPembelianId != null) {
+      _loadExisting(widget.existingPembelianId!);
     }
   }
 
@@ -92,6 +106,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                 jumlah: item.jumlah,
                 hargaBeliSatuan: item.hargaBeliSatuan,
                 hargaBeliLama: item.hargaBeliLama,
+                totalHarga: item.jumlah * item.hargaBeliSatuan,
                 diskonTipe: item.diskonTipe,
                 diskonValue: item.diskonValue,
               ),
@@ -100,6 +115,42 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
         });
       }
       await pendingRepo.deletePending(id);
+    }
+  }
+
+  Future<void> _loadExisting(int id) async {
+    final repo = sl<PembelianRepository>();
+    final pembelian = await repo.getPembelianById(id);
+    if (pembelian == null) return;
+
+    final items = await repo.getItemsByPembelianId(id);
+
+    Supplier? supplier;
+    final supplierRepo = sl<SupplierRepository>();
+    final allSupplier = await supplierRepo.getAllSupplier();
+    supplier = allSupplier.where(
+      (s) => s.nama == pembelian.namaSupplier,
+    ).firstOrNull;
+
+    if (mounted) {
+      setState(() {
+        _pembelianId = id;
+        _selectedSupplier = supplier;
+
+        _items.clear();
+        for (final item in items) {
+          _items.add(
+            _ItemPembelian(
+              produkId: item.produkId,
+              namaProduk: item.namaProduk ?? '',
+              jumlah: item.jumlah,
+              hargaBeliSatuan: item.hargaBeliSatuan,
+              hargaBeliLama: item.hargaBeliSatuan,
+              totalHarga: item.subtotal,
+            ),
+          );
+        }
+      });
     }
   }
 
@@ -146,6 +197,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                 jumlah: 1,
                 hargaBeliSatuan: p.hargaBeli,
                 hargaBeliLama: p.hargaBeli,
+                totalHarga: 1 * p.hargaBeli,
               ),
             );
           });
@@ -162,10 +214,12 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
               jumlah: 1,
               hargaBeliSatuan: p.hargaBeli,
               hargaBeliLama: p.hargaBeli,
+              totalHarga: 1 * p.hargaBeli,
             ),
           );
         });
       }
+      return;
     }
   }
 
@@ -216,6 +270,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                   jumlah: 1,
                   hargaBeliSatuan: p.hargaBeli,
                   hargaBeliLama: p.hargaBeli,
+                  totalHarga: 1 * p.hargaBeli,
                 ),
               );
             });
@@ -238,8 +293,11 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                 (i) => i.produkId == id && i.satuanId == satuanId,
               );
               if (existing != -1) {
-                _items[existing] = _items[existing].copyWith(
-                  jumlah: _items[existing].jumlah + qty,
+                final existingItem = _items[existing];
+                final newJumlah = existingItem.jumlah + qty;
+                _items[existing] = existingItem.copyWith(
+                  jumlah: newJumlah,
+                  totalHarga: newJumlah * existingItem.hargaBeliSatuan,
                 );
               } else {
                 _items.add(
@@ -249,6 +307,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                     jumlah: qty,
                     hargaBeliSatuan: harga,
                     hargaBeliLama: harga,
+                    totalHarga: qty * harga,
                     satuanId: satuanId,
                     konversi: konversi,
                   ),
@@ -320,10 +379,10 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
   void _showEditItemDialog(int index, _ItemPembelian item) {
     final qtyController = TextEditingController(text: item.jumlah.toString());
     final hargaController = TextEditingController(
-      text: item.hargaBeliSatuan.toStringAsFixed(0),
+      text: item.hargaBeliSatuan.toStringAsFixed(2),
     );
     final totalController = TextEditingController(
-      text: (item.jumlah * item.hargaBeliSatuan).toStringAsFixed(0),
+      text: item.totalHarga.toStringAsFixed(0),
     );
 
     qtyController.selection = TextSelection(
@@ -375,7 +434,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                 final total = double.tryParse(val) ?? 0;
                 final qty = int.tryParse(qtyController.text) ?? 1;
                 if (qty > 0) {
-                  hargaController.text = (total / qty).toStringAsFixed(0);
+                  hargaController.text = (total / qty).toStringAsFixed(2);
                 }
               },
             ),
@@ -389,13 +448,15 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
           TextButton(
             onPressed: () {
               final newJumlah = int.tryParse(qtyController.text) ?? 1;
-              final newHarga =
-                  double.tryParse(hargaController.text) ?? item.hargaBeliSatuan;
-              if (newJumlah > 0 && newHarga >= 0) {
+              final newTotal = double.tryParse(totalController.text) ??
+                  (item.jumlah * item.hargaBeliSatuan);
+              if (newJumlah > 0 && newTotal >= 0) {
+                final newHarga = newTotal / newJumlah;
                 setState(
                   () => _items[index] = item.copyWith(
                     jumlah: newJumlah,
                     hargaBeliSatuan: newHarga,
+                    totalHarga: newTotal,
                   ),
                 );
               }
@@ -456,109 +517,186 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
         authState is Authenticated && authState.user.role == 'kasir';
 
     if (isKasir) {
-      final pendingRepo = sl<PendingPembelianRepository>();
-      final pending = PendingPembelian(
-        supplierId: _selectedSupplier?.id,
-        namaSupplier: _selectedSupplier?.nama,
-        isPpnEnabled: _isPpnEnabled,
-        ppnPercent: _ppnPercent,
-      );
-      final pendingId = await pendingRepo.addPending(pending);
-      for (final item in _items) {
-        await pendingRepo.addItem(
-          pendingId,
-          PendingPembelianItemData(
-            produkId: item.produkId,
-            namaProduk: item.namaProduk,
-            jumlah: item.jumlah,
-            hargaBeliSatuan: item.hargaBeliSatuan,
-            hargaBeliLama: item.hargaBeliLama,
-            diskonTipe: item.diskonTipe,
-            diskonValue: item.diskonValue,
+      try {
+        final pendingRepo = sl<PendingPembelianRepository>();
+        final pending = PendingPembelian(
+          supplierId: _selectedSupplier?.id,
+          namaSupplier: _selectedSupplier?.nama,
+          isPpnEnabled: _isPpnEnabled,
+          ppnPercent: _ppnPercent,
+        );
+        final pendingId = await pendingRepo.addPending(pending);
+        for (final item in _items) {
+          await pendingRepo.addItem(
+            pendingId,
+            PendingPembelianItemData(
+              produkId: item.produkId,
+              namaProduk: item.namaProduk,
+              jumlah: item.jumlah,
+              hargaBeliSatuan: item.hargaBeliSatuan,
+              hargaBeliLama: item.hargaBeliLama,
+              diskonTipe: item.diskonTipe,
+              diskonValue: item.diskonValue,
+            ),
+          );
+        }
+
+        final addNotifikasi = sl<AddNotifikasi>();
+        await addNotifikasi(
+          Notifikasi(
+            judul: 'Pembelian Pending Baru',
+            pesan:
+                'Kasir menambahkan draft pembelian baru dari ${_selectedSupplier?.nama ?? "Supplier tidak diketahui"}.',
+            tipe: 'INFO',
           ),
         );
-      }
 
-      final addNotifikasi = sl<AddNotifikasi>();
-      await addNotifikasi(
-        Notifikasi(
-          judul: 'Pembelian Pending Baru',
-          pesan:
-              'Kasir menambahkan draft pembelian baru dari ${_selectedSupplier!.nama}.',
-          tipe: 'INFO',
-        ),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pembelian disimpan ke draft (Pending)'),
-          ),
-        );
-        setState(() => _forcePop = true);
-        Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Pembelian disimpan ke draft (Pending)'),
+            ),
+          );
+          setState(() => _forcePop = true);
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gagal menyimpan ke pending: $e')),
+          );
+        }
       }
       return;
     }
 
-    final allProduk = await sl<GetAllProduk>().call();
-    final Map<int, Produk> produkMap = {for (var p in allProduk) p.id!: p};
-    final List<_ItemPembelian> changedItems = [];
+    if (!mounted) return;
 
-    for (final item in _items) {
-      if (item.hargaBeliSatuan != item.hargaBeliLama) {
-        changedItems.add(item);
+    final bloc = context.read<PembelianBloc>();
+
+    if (_pembelianId == null) {
+      final allProduk = await sl<GetAllProduk>().call();
+      final Map<int, Produk> produkMap = {for (var p in allProduk) p.id!: p};
+      final List<_ItemPembelian> changedItems = [];
+
+      for (final item in _items) {
+        if (item.hargaBeliSatuan != item.hargaBeliLama) {
+          changedItems.add(item);
+        }
       }
-    }
 
-    if (changedItems.isNotEmpty) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => _PriceValidationDialog(
-          changedItems: changedItems,
-          produkMap: produkMap,
+      if (changedItems.isNotEmpty) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => _PriceValidationDialog(
+            changedItems: changedItems,
+            produkMap: produkMap,
+          ),
+        );
+        if (proceed != true) return;
+      }
+
+      if (!mounted) return;
+
+      _pendingSaveItems = List.from(_items);
+      _pendingSaveSupplierId = _selectedSupplier!.id!;
+      setState(() => _isSaving = true);
+      bloc.add(
+        AddPembelianEvent(
+          namaSupplier: _selectedSupplier!.nama,
+          supplierId: _pendingSaveSupplierId,
+          items: _items
+              .map(
+                (i) => ItemPembelianData(
+                  produkId: i.produkId,
+                  namaProduk: i.namaProduk,
+                  jumlah: i.jumlah,
+                  hargaBeliSatuan: i.hargaBeliSatuan,
+                  subtotal: i.subtotal,
+                  satuanId: i.satuanId,
+                  konversi: i.konversi,
+                ),
+              )
+              .toList(),
         ),
       );
-      if (proceed != true) return;
-    }
+    } else {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Update Pembelian'),
+          content: const Text(
+            'Perubahan ini akan mengupdate stok dan HPP produk terkait. Lanjutkan?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Lanjutkan'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+      if (!mounted) return;
 
-    if (!mounted) return;
-    context.read<PembelianBloc>().add(
-      AddPembelianEvent(
-        namaSupplier: _selectedSupplier!.nama,
-        supplierId: _selectedSupplier!.id!,
-        items: _items
-            .map(
-              (i) => ItemPembelianData(
-                produkId: i.produkId,
-                namaProduk: i.namaProduk,
-                jumlah: i.jumlah,
-                hargaBeliSatuan: i.hargaBeliSatuan,
-                satuanId: i.satuanId,
-                konversi: i.konversi,
-              ),
-            )
-            .toList(),
-      ),
-    );
-
-    final dao = sl<SupplierProductsDao>();
-    for (final item in _items) {
-      await dao.upsertSupplierProduct(
-        supplierId: _selectedSupplier!.id!,
-        produkId: item.produkId,
-        lastPrice: item.hargaBeliSatuan,
+      _pendingSaveItems = List.from(_items);
+      _pendingSaveSupplierId = _selectedSupplier!.id!;
+      setState(() => _isSaving = true);
+      bloc.add(
+        UpdatePembelianEvent(
+          pembelianId: _pembelianId!,
+          namaSupplier: _selectedSupplier!.nama,
+          items: _items
+              .map(
+                (i) => ItemPembelianData(
+                  produkId: i.produkId,
+                  namaProduk: i.namaProduk,
+                  jumlah: i.jumlah,
+                  hargaBeliSatuan: i.hargaBeliSatuan,
+                  subtotal: i.subtotal,
+                  satuanId: i.satuanId,
+                  konversi: i.konversi,
+                ),
+              )
+              .toList(),
+        ),
       );
     }
-
-    setState(() => _forcePop = true);
-    Navigator.pop(context);
   }
 
   Future<bool> _onWillPop() async {
     if (_items.isEmpty && _selectedSupplier == null) {
       return true;
+    }
+    if (_pembelianId != null) {
+      final act = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Batalkan Perubahan?'),
+          content: const Text(
+            'Perubahan yang belum disimpan akan hilang. Lanjutkan?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'batal'),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'hapus'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.warningRed,
+              ),
+              child: const Text('Ya, Batalkan'),
+            ),
+          ],
+        ),
+      );
+      return act == 'hapus';
     }
     final act = await showDialog<String>(
       context: context,
@@ -588,49 +726,112 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
     if (act == 'hapus') {
       return true;
     } else if (act == 'simpan') {
-      final pendingRepo = sl<PendingPembelianRepository>();
-      final pending = PendingPembelian(
-        supplierId: _selectedSupplier?.id,
-        namaSupplier: _selectedSupplier?.nama,
-        isPpnEnabled: _isPpnEnabled,
-        ppnPercent: _ppnPercent,
-      );
-      final pendingId = await pendingRepo.addPending(pending);
-      for (final item in _items) {
-        await pendingRepo.addItem(
-          pendingId,
-          PendingPembelianItemData(
-            produkId: item.produkId,
-            namaProduk: item.namaProduk,
-            jumlah: item.jumlah,
-            hargaBeliSatuan: item.hargaBeliSatuan,
-            hargaBeliLama: item.hargaBeliLama,
-            diskonTipe: item.diskonTipe,
-            diskonValue: item.diskonValue,
-          ),
+      try {
+        final pendingRepo = sl<PendingPembelianRepository>();
+        final pending = PendingPembelian(
+          supplierId: _selectedSupplier?.id,
+          namaSupplier: _selectedSupplier?.nama,
+          isPpnEnabled: _isPpnEnabled,
+          ppnPercent: _ppnPercent,
         );
+        final pendingId = await pendingRepo.addPending(pending);
+        for (final item in _items) {
+          await pendingRepo.addItem(
+            pendingId,
+            PendingPembelianItemData(
+              produkId: item.produkId,
+              namaProduk: item.namaProduk,
+              jumlah: item.jumlah,
+              hargaBeliSatuan: item.hargaBeliSatuan,
+              hargaBeliLama: item.hargaBeliLama,
+              diskonTipe: item.diskonTipe,
+              diskonValue: item.diskonValue,
+            ),
+          );
+        }
+        return true;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menyimpan ke pending: $e'),
+              backgroundColor: AppTheme.warningRed,
+            ),
+          );
+        }
+        return false;
       }
-      return true;
     }
     return false;
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _forcePop,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        final shouldPop = await _onWillPop();
-        if (shouldPop) {
+    return BlocListener<PembelianBloc, PembelianState>(
+      listener: (context, state) async {
+        if (!_isSaving) return;
+        if (state is PembelianSuccess) {
+          _isSaving = false;
+          final dao = sl<SupplierProductsDao>();
+          final items = _pendingSaveItems ?? [];
+          final supplierId = _pendingSaveSupplierId;
+          if (supplierId != null) {
+            for (final item in items) {
+              await dao.upsertSupplierProduct(
+                supplierId: supplierId,
+                produkId: item.produkId,
+                lastPrice: item.hargaBeliSatuan,
+              );
+            }
+          }
+          _pendingSaveItems = null;
+          _pendingSaveSupplierId = null;
           if (mounted) {
             setState(() => _forcePop = true);
             Navigator.pop(context);
           }
+        } else if (state is PembelianError) {
+          _isSaving = false;
+          _pendingSaveItems = null;
+          _pendingSaveSupplierId = null;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Gagal: ${state.message}'),
+                backgroundColor: AppTheme.warningRed,
+              ),
+            );
+          }
         }
       },
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Pembelian Baru')),
+      child: PopScope(
+        canPop: _forcePop,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          final shouldPop = await _onWillPop();
+          if (shouldPop) {
+            if (mounted) {
+              setState(() => _forcePop = true);
+              Navigator.pop(context);
+            }
+          }
+        },
+        child: Scaffold(
+        appBar: AppBar(
+          title: Text(_pembelianId != null ? 'Edit Pembelian' : 'Pembelian Baru'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.pending_actions),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PendingPembelianPage()),
+                );
+              },
+              tooltip: 'Lihat Pending',
+            ),
+          ],
+        ),
         body: Column(
           children: [
             _buildSupplierSection(),
@@ -642,8 +843,9 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSupplierSection() {
     return Padding(
@@ -726,8 +928,11 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
               (i) => i.produkId == id && i.satuanId == satuanId,
             );
             if (existing != -1) {
-              _items[existing] = _items[existing].copyWith(
-                jumlah: _items[existing].jumlah + qty,
+              final existingItem = _items[existing];
+              final newJumlah = existingItem.jumlah + qty;
+              _items[existing] = existingItem.copyWith(
+                jumlah: newJumlah,
+                totalHarga: newJumlah * existingItem.hargaBeliSatuan,
               );
             } else {
               _items.add(
@@ -737,6 +942,7 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                   jumlah: qty,
                   hargaBeliSatuan: harga,
                   hargaBeliLama: harga,
+                  totalHarga: qty * harga,
                   satuanId: satuanId,
                   konversi: konversi,
                 ),
@@ -856,9 +1062,11 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
                       onPressed: () {
                         if (item.jumlah > 1) {
+                          final newJumlah = item.jumlah - 1;
                           setState(
                             () => _items[index] = item.copyWith(
-                              jumlah: item.jumlah - 1,
+                              jumlah: newJumlah,
+                              totalHarga: newJumlah * item.hargaBeliSatuan,
                             ),
                           );
                         }
@@ -887,11 +1095,15 @@ class _PembelianFormPageState extends State<PembelianFormPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
-                      onPressed: () => setState(
-                        () => _items[index] = item.copyWith(
-                          jumlah: item.jumlah + 1,
-                        ),
-                      ),
+                      onPressed: () {
+                        final newJumlah = item.jumlah + 1;
+                        setState(
+                          () => _items[index] = item.copyWith(
+                            jumlah: newJumlah,
+                            totalHarga: newJumlah * item.hargaBeliSatuan,
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(width: 8),
                     Column(
@@ -1100,6 +1312,7 @@ class _ItemPembelian {
   final int jumlah;
   final double hargaBeliSatuan;
   final double hargaBeliLama; // harga beli sebelum transaksi ini (per satuan yang dipilih)
+  final double totalHarga; // total harga yg diinput user — source of truth untuk subtotal
   final int diskonTipe;
   final double diskonValue;
   // null = satuan dasar, non-null = SatuanProduk.id
@@ -1113,13 +1326,14 @@ class _ItemPembelian {
     required this.jumlah,
     required this.hargaBeliSatuan,
     required this.hargaBeliLama,
+    required this.totalHarga,
     this.diskonTipe = 0,
     this.diskonValue = 0,
     this.satuanId,
     this.konversi = 1.0,
   });
 
-  double get subtotal => jumlah * hargaBeliSatuan;
+  double get subtotal => totalHarga;
   double get diskonRp =>
       diskonTipe == 1 ? subtotal * diskonValue / 100 : diskonValue;
 
@@ -1129,6 +1343,7 @@ class _ItemPembelian {
     int? jumlah,
     double? hargaBeliSatuan,
     double? hargaBeliLama,
+    double? totalHarga,
     int? diskonTipe,
     double? diskonValue,
     int? satuanId,
@@ -1140,6 +1355,7 @@ class _ItemPembelian {
       jumlah: jumlah ?? this.jumlah,
       hargaBeliSatuan: hargaBeliSatuan ?? this.hargaBeliSatuan,
       hargaBeliLama: hargaBeliLama ?? this.hargaBeliLama,
+      totalHarga: totalHarga ?? this.totalHarga,
       diskonTipe: diskonTipe ?? this.diskonTipe,
       diskonValue: diskonValue ?? this.diskonValue,
       satuanId: satuanId ?? this.satuanId,

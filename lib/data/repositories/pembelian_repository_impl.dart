@@ -138,4 +138,33 @@ class PembelianRepositoryImpl implements PembelianRepository {
       );
     }).toList();
   }
+
+  @override
+  Future<void> updatePembelian(domain.Pembelian pembelian) async {
+    await (_db.update(_db.pembelianTable)
+      ..where((t) => t.id.equals(pembelian.id!)))
+      .write(PembelianTableCompanion(
+        namaSupplier: Value(pembelian.namaSupplier),
+        totalHarga: Value(pembelian.totalHarga),
+      ));
+    await _syncHelper.onUpdate(
+      tableEntity: 'pembelian',
+      localId: pembelian.id!,
+    );
+  }
+
+  @override
+  Future<void> deleteItemsByPembelianId(int pembelianId) async {
+    await (_db.delete(_db.itemPembelianTable)
+      ..where((t) => t.pembelianId.equals(pembelianId)))
+      .go();
+  }
+
+  @override
+  Future<void> deletePembelian(int id) async {
+    await (_db.delete(_db.pembelianTable)
+      ..where((t) => t.id.equals(id)))
+      .go();
+    await _syncHelper.onDelete(tableEntity: 'pembelian', localId: id);
+  }
 }

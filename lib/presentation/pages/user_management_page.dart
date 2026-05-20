@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/di/injection.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../core/theme/app_theme.dart';
+import '../blocs/auth/auth_bloc.dart';
+import '../blocs/auth/auth_event.dart';
 
 class UserManagementPage extends StatefulWidget {
   const UserManagementPage({super.key});
@@ -42,8 +45,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   void _showUserDialog({User? user}) {
     final isEditing = user != null;
-    final usernameCtrl = TextEditingController(text: user?.username ?? '');
     final passwordCtrl = TextEditingController(text: user?.password ?? '');
+    final namaCtrl = TextEditingController(text: user?.nama ?? '');
+    final emailCtrl = TextEditingController(text: user?.email ?? '');
 
     showDialog(
       context: context,
@@ -53,24 +57,33 @@ class _UserManagementPageState extends State<UserManagementPage> {
               ? (user.role == 'admin' ? 'Ubah Password Admin' : 'Edit Kasir')
               : 'Tambah Kasir',
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: usernameCtrl,
-              readOnly: isEditing && user.role == 'admin',
-              decoration: InputDecoration(
-                labelText: 'Username',
-                enabled: !(isEditing && user.role == 'admin'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: namaCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nama',
+                  prefixIcon: Icon(Icons.badge),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordCtrl,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordCtrl,
+                decoration: const InputDecoration(labelText: 'Password'),
+                obscureText: true,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -79,20 +92,23 @@ class _UserManagementPageState extends State<UserManagementPage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final username = usernameCtrl.text.trim();
               final password = passwordCtrl.text.trim();
-              if (username.isEmpty || password.isEmpty) {
+              final nama = namaCtrl.text.trim();
+              final email = emailCtrl.text.trim();
+              if (password.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Isi semua field')),
+                  const SnackBar(content: Text('Isi semua field wajib')),
                 );
                 return;
               }
 
               final newUser = User(
                 id: user?.id,
-                username: username,
+                username: '', // akan auto-generate dari email di repo
                 password: password,
                 role: user?.role ?? 'kasir',
+                nama: nama.isEmpty ? null : nama,
+                email: email.isEmpty ? null : email,
               );
 
               try {
@@ -104,6 +120,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
                 if (mounted) {
                   Navigator.pop(ctx);
                   _loadUsers();
+                }
+                // Refresh auth state jika user yang diupdate adalah user saat ini
+                if (mounted) {
+                  context.read<AuthBloc>().add(CheckAuthStatus());
                 }
               } catch (e) {
                 if (mounted) {
@@ -131,7 +151,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Hapus Akun'),
-        content: Text('Yakin ingin menghapus akun ${user.username}?'),
+        content: Text(
+            'Yakin ingin menghapus akun ${user.nama ?? user.username}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -181,8 +202,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       color: Colors.white,
                     ),
                   ),
-                  title: Text(user.username),
-                  subtitle: Text(user.role.toUpperCase()),
+                  title: Text(user.nama ?? user.username),
+                  subtitle: Text('${user.role.toUpperCase()}${user.nama != null ? ' • ${user.username}' : ''}'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

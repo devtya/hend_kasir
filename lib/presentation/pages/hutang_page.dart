@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/di/injection.dart';
 import '../../core/theme/app_theme.dart';
 import '../blocs/hutang/hutang_bloc.dart';
 import '../blocs/hutang/hutang_event.dart';
 import '../blocs/hutang/hutang_state.dart';
+import '../blocs/transaksi/transaksi_bloc.dart';
 import 'hutang_form_page.dart';
+import 'transaksi_detail_page.dart';
 
 class HutangPage extends StatefulWidget {
   const HutangPage({super.key});
@@ -180,6 +183,19 @@ class _HutangPageState extends State<HutangPage> {
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
+              onTap: h.transaksiId != null
+                  ? () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BlocProvider(
+                            create: (_) => sl<TransaksiBloc>(),
+                            child: TransaksiDetailPage(
+                              transaksiId: h.transaksiId!,
+                            ),
+                          ),
+                        ),
+                      )
+                  : null,
               leading: CircleAvatar(
                 backgroundColor: isLunas
                     ? AppTheme.lightGreen

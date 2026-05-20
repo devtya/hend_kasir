@@ -102,7 +102,7 @@ class _InitialSyncPageState extends State<InitialSyncPage> {
           ),
           const SizedBox(height: 32),
           Text(
-            'Hend Kasir',
+            'HendKasir',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),

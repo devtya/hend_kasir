@@ -80,3 +80,7 @@ class BayarHutangCashier extends CashierEvent {
   @override
   List<Object?> get props => [namaPelanggan];
 }
+
+class ClearError extends CashierEvent {
+  const ClearError();
+}
