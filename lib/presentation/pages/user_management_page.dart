@@ -140,6 +140,83 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
   }
 
+  void _showResetPasswordDialog(User user) {
+    final passwordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Reset password untuk ${user.nama ?? user.username}'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordCtrl,
+              decoration: const InputDecoration(labelText: 'Password Baru'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmCtrl,
+              decoration: const InputDecoration(labelText: 'Konfirmasi Password'),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final password = passwordCtrl.text.trim();
+              final confirm = confirmCtrl.text.trim();
+              if (password.isEmpty || confirm.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Isi semua field')),
+                );
+                return;
+              }
+              if (password != confirm) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Password tidak cocok')),
+                );
+                return;
+              }
+
+              try {
+                await _authRepo.updateUser(user.copyWith(password: password));
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Password ${user.nama ?? user.username} berhasil direset'),
+                      backgroundColor: AppTheme.primaryGreen,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text('Gagal: $e'),
+                      backgroundColor: AppTheme.warningRed,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmDelete(User user) {
     if (user.role == 'admin') {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -207,6 +284,11 @@ class _UserManagementPageState extends State<UserManagementPage> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.lock_reset, color: Colors.orange),
+                        tooltip: 'Reset Password',
+                        onPressed: () => _showResetPasswordDialog(user),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.edit, color: Colors.blue),
                         onPressed: () => _showUserDialog(user: user),
