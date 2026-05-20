@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_event.dart';
 import '../blocs/theme/theme_cubit.dart';
+import 'login_page.dart';
 import 'printer_settings_page.dart';
 import 'user_management_page.dart';
 
@@ -279,6 +280,11 @@ class _SettingsPageState extends State<SettingsPage> {
                               onPressed: () {
                                 Navigator.pop(ctx);
                                 context.read<AuthBloc>().add(LogoutEvent());
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                                  (route) => false,
+                                );
                               },
                               style: TextButton.styleFrom(
                                 foregroundColor: AppTheme.warningRed,
